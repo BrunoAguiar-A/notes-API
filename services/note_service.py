@@ -1,43 +1,73 @@
 from typing import List, Optional
 from schemas.note import CreateNote, UpdatedNote, ResponseNote
-from models.memory import Notes, count_id
+from models.note import Notes
+from sqlalchemy.orm import Session
 
-def list_notes() -> List[ResponseNote]:
-    return Notes
+def list_notes(db: Session) -> List[ResponseNote]:
+    # Retrieve all notes from the database
+    notes = db.query(Notes).all()
+    return [ResponseNote.from_orm(note) for note in notes]
 
-def create_note(new: CreateNote) -> ResponseNote:
-    global count_id
-    note = ResponseNote(id=count_id, **new.dict())
-    Notes.append(note)
-    count_id += 1
-    return note
+def create_note(db: Session, note: CreateNote) -> ResponseNote:
+    # Create a new Note instance with the provided data
+    new_note = Notes(
+        title=note.title,
+        content=note.content,
+        important=note.important
+    )
 
-def search_note(note_id: int) -> Optional[ResponseNote]:
-    return next((n for n in Notes if n.id == note_id), None)
+    # Add the new note to the session and commit it to the database
+    db.add(new_note)
+    db.commit()
+    db.refresh(new_note)
 
-def update_note(note_id: int, updated: CreateNote) -> ResponseNote:
-    for i, note in enumerate(Notes):
-        if note.id == note_id:
-            Notes[i] = ResponseNote(id=note_id, **updated.dict())
-            return Notes[i]
-    raise ValueError("Note not found")
+    # Return the created note as a response schema
+    return ResponseNote.from_orm(new_note)
 
-def patch_note(note_id: int, update: UpdatedNote) -> ResponseNote:
-    note = search_note(note_id)
-    if note is None:
-        raise ValueError("Note not found")
-    
+def search_note(db: Session, note_id: int) -> Optional[ResponseNote]:
+    # Search for a note by its ID
+    note = db.query(Notes).filter(Notes.id == note_id).first()
+    if note:
+        return ResponseNote.from_orm(note)
+    return None
+
+def update_note(db: Session, note_id: int, updated: CreateNote) -> Optional[ResponseNote]:
+    # Update a note fully with new data
+    note = db.query(Notes).filter(Notes.id == note_id).first()
+    if not note:
+        return None
+
+    note.title = updated.title
+    note.content = updated.content
+    note.important = updated.important
+
+    db.commit()
+    db.refresh(note)
+    return ResponseNote.from_orm(note)
+
+def patch_note(db: Session, note_id: int, update: UpdatedNote) -> Optional[ResponseNote]:
+    # Update only fields that are provided (partial update)
+    note = db.query(Notes).filter(Notes.id == note_id).first()
+    if not note:
+        return None
+
     if update.title is not None:
         note.title = update.title
-    if update.conteud is not None:
-        note.conteud = update.conteud
+    if update.content is not None:
+        note.content = update.content
     if update.important is not None:
         note.important = update.important
 
-    return note
+    db.commit()
+    db.refresh(note)
+    return ResponseNote.from_orm(note)
 
-def delete_note(note_id: int) -> bool:
-    global Notes
-    before = len(Notes)
-    Notes = [n for n in Notes if n.id != note_id]
-    return len(Notes) < before
+def delete_note(db: Session, note_id: int) -> bool:
+    # Delete a note by its ID
+    note = db.query(Notes).filter(Notes.id == note_id).first()
+    if not note:
+        return False
+
+    db.delete(note)
+    db.commit()
+    return True
