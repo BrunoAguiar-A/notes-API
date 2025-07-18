@@ -1,43 +1,47 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
+from typing import List
 from schemas.note import CreateNote, UpdatedNote, ResponseNote
-from services.note_service import (
-    list_notes, create_note, search_note,
-    update_note, patch_note, delete_note
+from services import note_service
+from database import get_db
+
+router = APIRouter(
+    prefix="/notes",
+    tags=["Notes"]
 )
 
-router = APIRouter()
-
-@router.get("/", response_model=list[ResponseNote])
-def get_notes():
-    return list_notes()
-
-@router.post("/", response_model=ResponseNote)
-def post_note(note: CreateNote):
-    return create_note(note)
+@router.get("/", response_model=List[ResponseNote])
+def get_notes(db: Session = Depends(get_db)):
+    return note_service.list_notes(db)
 
 @router.get("/{note_id}", response_model=ResponseNote)
-def get_note(note_id: int):
-    note = search_note(note_id)
+def get_note(note_id: int, db: Session = Depends(get_db)):
+    note = note_service.search_note(db, note_id)
     if note is None:
         raise HTTPException(status_code=404, detail="Note not found")
     return note
 
+@router.post("/", response_model=ResponseNote, status_code=201)
+def create_note(note: CreateNote, db: Session = Depends(get_db)):
+    return note_service.create_note(db, note)
+
 @router.put("/{note_id}", response_model=ResponseNote)
-def put_note(note_id: int, note: CreateNote):
-    try:
-        return update_note(note_id, note)
-    except ValueError:
+def update_note(note_id: int, updated_note: CreateNote, db: Session = Depends(get_db)):
+    updated = note_service.update_note(db, note_id, updated_note)
+    if updated is None:
         raise HTTPException(status_code=404, detail="Note not found")
+    return updated
 
 @router.patch("/{note_id}", response_model=ResponseNote)
-def patch_note_handler(note_id: int, update: UpdatedNote):
-    try:
-        return patch_note(note_id, update)
-    except ValueError:
+def patch_note(note_id: int, note_update: UpdatedNote, db: Session = Depends(get_db)):
+    patched = note_service.patch_note(db, note_id, note_update)
+    if patched is None:
         raise HTTPException(status_code=404, detail="Note not found")
+    return patched
 
-@router.delete("/{note_id}")
-def delete_note_handler(note_id: int):
-    if delete_note(note_id):
-        return {"ok": True}
-    raise HTTPException(status_code=404, detail="Note not found")
+@router.delete("/{note_id}", status_code=204)
+def delete_note(note_id: int, db: Session = Depends(get_db)):
+    success = note_service.delete_note(db, note_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Note not found")
+    return None
