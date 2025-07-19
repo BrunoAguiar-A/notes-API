@@ -4,6 +4,7 @@ from typing import List
 from schemas.note import CreateNote, UpdatedNote, ResponseNote
 from services import note_service
 from database import get_db
+from models.note import Notes
 
 router = APIRouter(
     prefix="/notes",
@@ -23,10 +24,15 @@ def get_note(note_id: int, db: Session = Depends(get_db)):
 
 @router.post("/", response_model=ResponseNote, status_code=201)
 def create_note(note: CreateNote, db: Session = Depends(get_db)):
+    existing_note = db.query(Notes).filter(Notes.title == note.title).first()
+    if existing_note:
+        raise HTTPException(status_code=409, detail="Note with this title already exists")
+    if "forbidden" in note.title.lower():
+        raise HTTPException(status_code=400, detail="Title contains forbidden word")
     return note_service.create_note(db, note)
 
 @router.put("/{note_id}", response_model=ResponseNote)
-def update_note(note_id: int, updated_note: CreateNote, db: Session = Depends(get_db)):
+def update_note(note_id: int, updated_note: UpdatedNote, db: Session = Depends(get_db)):
     updated = note_service.update_note(db, note_id, updated_note)
     if updated is None:
         raise HTTPException(status_code=404, detail="Note not found")

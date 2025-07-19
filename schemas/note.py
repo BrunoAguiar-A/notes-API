@@ -1,6 +1,6 @@
 from pydantic import BaseModel
 from typing import Optional
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 class CreateNote(BaseModel):
     title: str
@@ -8,8 +8,8 @@ class CreateNote(BaseModel):
     important: bool = False
 
 class UpdatedNote(BaseModel):
-    title: Optional[str] = None
-    content: Optional[str] = None
+    title: Optional[str] = Field(default=None, min_length=1)
+    content: Optional[str] = Field(default=None, min_length=1)
     important: Optional[bool] = None
 
 class ResponseNote(BaseModel):
