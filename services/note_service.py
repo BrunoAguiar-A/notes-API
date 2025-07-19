@@ -32,15 +32,18 @@ def search_note(db: Session, note_id: int) -> Optional[ResponseNote]:
         return ResponseNote.model_validate(note)
     return None
 
-def update_note(db: Session, note_id: int, updated: CreateNote) -> Optional[ResponseNote]:
+def update_note(db: Session, note_id: int, updated: UpdatedNote) -> Optional[ResponseNote]:
     # Update a note fully with new data
     note = db.query(Notes).filter(Notes.id == note_id).first()
     if not note:
         return None
 
-    note.title = updated.title
-    note.content = updated.content
-    note.important = updated.important
+    if updated.title is not None:
+        note.title = updated.title
+    if updated.content is not None:
+        note.content = updated.content
+    if updated.important is not None:
+        note.important = updated.important
 
     db.commit()
     db.refresh(note)
