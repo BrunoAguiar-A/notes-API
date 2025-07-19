@@ -1,5 +1,6 @@
 from pydantic import BaseModel
 from typing import Optional
+from pydantic import BaseModel, ConfigDict
 
 class CreateNote(BaseModel):
     title: str
@@ -17,6 +18,4 @@ class ResponseNote(BaseModel):
     content: str
     important: bool
 
-    class Config:
-        from_attributes = True  # Habilita o uso de from_orm()
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)

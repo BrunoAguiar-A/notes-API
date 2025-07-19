@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 def list_notes(db: Session) -> List[ResponseNote]:
     # Retrieve all notes from the database
     notes = db.query(Notes).all()
-    return [ResponseNote.from_orm(note) for note in notes]
+    return [ResponseNote.model_validate(note) for note in notes]
 
 def create_note(db: Session, note: CreateNote) -> ResponseNote:
     # Create a new Note instance with the provided data
@@ -22,13 +22,14 @@ def create_note(db: Session, note: CreateNote) -> ResponseNote:
     db.refresh(new_note)
 
     # Return the created note as a response schema
-    return ResponseNote.from_orm(new_note)
+    return ResponseNote.model_validate(new_note)
+
 
 def search_note(db: Session, note_id: int) -> Optional[ResponseNote]:
     # Search for a note by its ID
     note = db.query(Notes).filter(Notes.id == note_id).first()
     if note:
-        return ResponseNote.from_orm(note)
+        return ResponseNote.model_validate(note)
     return None
 
 def update_note(db: Session, note_id: int, updated: CreateNote) -> Optional[ResponseNote]:
@@ -43,7 +44,7 @@ def update_note(db: Session, note_id: int, updated: CreateNote) -> Optional[Resp
 
     db.commit()
     db.refresh(note)
-    return ResponseNote.from_orm(note)
+    return ResponseNote.model_validate(note)
 
 def patch_note(db: Session, note_id: int, update: UpdatedNote) -> Optional[ResponseNote]:
     # Update only fields that are provided (partial update)
@@ -60,7 +61,7 @@ def patch_note(db: Session, note_id: int, update: UpdatedNote) -> Optional[Respo
 
     db.commit()
     db.refresh(note)
-    return ResponseNote.from_orm(note)
+    return ResponseNote.model_validate(note)
 
 def delete_note(db: Session, note_id: int) -> bool:
     # Delete a note by its ID
