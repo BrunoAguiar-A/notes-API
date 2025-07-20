@@ -1,25 +1,35 @@
-import sys, os, pytest_asyncio
+import sys, os, pytest_asyncio, uuid
 from httpx import AsyncClient, ASGITransport
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from main import app
 
+# Fixture that provides an authenticated async client
 @pytest_asyncio.fixture
 async def async_client():
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
-        yield client
+    headers = await get_auth_headers()
+    # Create the test client with token headers
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test", headers=headers) as client:
+       yield client # Provide client to tests
 
+# Fixture that creates a temporary note before a test and deletes it afterward
 @pytest_asyncio.fixture
 async def create_temp_note(async_client):
-    # Cria nota temporária antes do teste
+    unique_title = f"Nota Temporária {uuid.uuid4()}"
     response = await async_client.post("/notes/", json={
-        "title": "Nota Temporária",
+        "title": unique_title,
         "content": "Conteúdo Temporário"
     })
     assert response.status_code == 201
-    note = response.json()
+    return response.json()
 
-    yield note  # Disponibiliza a nota para o teste
-
-    # Apaga após o teste
-    await async_client.delete(f"/notes/{note['id']}")
+# Helper function to get valid authentication headers (Bearer token)
+async def get_auth_headers():
+    async with AsyncClient(transport= ASGITransport(app=app), base_url="http://test") as client:
+        # Make a login request using username and password (plaintext)
+        response = await client.post("/token", data={
+            "username": "bruno",  #valid user
+            "password": "123456"
+        })
+        # Extract the access token from the response
+        token = response.json()["access_token"]
+        return {"Authorization": f"Bearer {token}"}

@@ -2,6 +2,7 @@ import pytest, sys, os
 from httpx import AsyncClient, ASGITransport
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from main import app
+from conftest import get_auth_headers
 
 
 ################################### CREATE TESTS - POST ###################################
@@ -24,8 +25,12 @@ async def test_create_note(async_client):
 # Test creating a note with forbidden word in the title, expecting 400 bad request
 @pytest.mark.asyncio
 async def test_post_bad_request():
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
+    headers = await get_auth_headers()
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://test",
+        headers= headers
+    ) as client:
         response = await client.post("/notes/", json={
             "title": "forbidden word",
             "content": "Create Content"
@@ -56,8 +61,8 @@ async def test_create_note_with_missing_fields(async_client, create_temp_note):
 # Test retrieving a note with a non-existent ID, expecting 404 not found
 @pytest.mark.asyncio
 async def test_get_nonexistent_note():
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
+    headers = await get_auth_headers()
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test", headers=headers) as client:
         response = await client.get("/notes/999999")  # ID provavelmente inexistente
 
     assert response.status_code == 404
@@ -65,11 +70,16 @@ async def test_get_nonexistent_note():
 # Test retrieving the list of all notes, expects a list response
 @pytest.mark.asyncio
 async def test_list_notes():
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
+    headers = await get_auth_headers()
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://test",
+        headers=headers
+    ) as client:
         response = await client.get("/notes/")
     assert response.status_code == 200
-    assert isinstance(response.json(),list)
+    data = response.json()
+    assert isinstance(data["data"],list)
 
 # Test retrieving a single note by its ID
 @pytest.mark.asyncio
@@ -79,6 +89,53 @@ async def test_get_note_by_id(async_client, create_temp_note):
     response = await async_client.get(f"/notes/{note['id']}")
     assert response.status_code == 200
     assert response.json()['id'] == note['id']
+
+@pytest.mark.asyncio
+async def test_list_notes_paginated_and_ordered():
+    headers =  await get_auth_headers()
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://test",
+        headers = headers
+    ) as client:
+        response = await client.get("/notes/?limit=5&offset=0&order_by=title&sort=asc")
+        assert response.status_code == 200
+
+        data = response.json()
+        assert isinstance(data, dict)
+        assert "data" in data
+        assert isinstance(data["data"], list)
+        assert len(data["data"]) <= 5
+
+        titles = [note["title"] for note in data["data"]]
+        assert titles == sorted(titles)
+
+@pytest.mark.asyncio
+async def test_invalid_limit_and_offset():
+    headers = await get_auth_headers()
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://test",
+        headers=headers
+    ) as client:
+        response = await client.get("/notes/?limit=-1&offset=-5")
+        assert response.status_code == 422
+
+@pytest.mark.asyncio
+async def test_invalid_order_by_field():
+    headers = await get_auth_headers()
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test", headers=headers) as client:
+        response = await client.get("/notes/?order_by=invalid_field")
+        assert response.status_code == 422
+
+@pytest.mark.asyncio
+async def test_search_query_param():
+    headers = await get_auth_headers()
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test", headers=headers) as client:
+        response = await client.get("/notes/?q=Temporário")
+        assert response.status_code == 200
+        data = response.json()
+        assert all("Temporário" in note["title"] or "Temporário" in note["content"] for note in data["data"])
 
 ################################### END GET TESTS - GET #####################################
 ################################### UPDATE TESTS - UPDATE ###################################
@@ -100,8 +157,8 @@ async def test_update_note(async_client, create_temp_note):
 # Test updating a note with a non-existent ID, expecting 404 not found
 @pytest.mark.asyncio
 async def test_update_nonexist_id():
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
+    headers = await get_auth_headers()
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test", headers=headers) as client:
         response = await client.put("/notes/4256", json={ # ID not exist
             "title": "New Title Updated",
             "content": "New content Test"
@@ -156,17 +213,76 @@ async def test_delete_notes(async_client, create_temp_note):
 # Test deleting a note with a non-existent ID, expecting 404 not found
 @pytest.mark.asyncio
 async def test_delete_nonexistent_note():
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
+    headers = await get_auth_headers()
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test", headers=headers) as client:
         response = await client.delete("/notes/999999")
     assert response.status_code == 404
 
 # Test deleting a note with an invalid ID format, expecting 422 validation error
 @pytest.mark.asyncio
 async def test_delete_invalid_id():
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
+    headers = await get_auth_headers()
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test", headers=headers) as client:
         response = await client.delete("/notes/abc")
     assert response.status_code == 422
 
 ################################### END DELETE TESTS - DELETE ###############################
+################################### ACCESS TOKEN TESTS  #####################################
+@pytest.mark.asyncio
+async def test_login_success(async_client):
+    response = await async_client.post("/token", data={
+        "username": "usuario_teste",
+        "password": "senha123"
+    })
+    assert response.status_code == 200
+    assert "access_token" in response.json()
+
+@pytest.mark.asyncio
+async def test_protected_route_without_token():
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/notes/")
+        assert response.status_code == 401
+
+@pytest.mark.asyncio
+async def test_protected_route_with_token(async_client):
+    # Primeiro, fazer login para obter o token
+    login_response = await async_client.post("/token", data={
+        "username": "usuario_teste",
+        "password": "senha123"
+    })
+    token = login_response.json()["access_token"]
+
+    # Usar o token no header Authorization
+    headers = {"Authorization": f"Bearer {token}"}
+    response = await async_client.get("/notes/", headers=headers)
+    assert response.status_code == 200
+
+@pytest.mark.asyncio
+async def test_login_invalid_credentials(async_client):
+    response = await async_client.post("/token", data={
+        "username": "usuario_invalido",
+        "password": "senhaerrada"
+    })
+    assert response.status_code == 401
+    assert response.json()["detail"] == "Invalid Credentials"
+
+@pytest.mark.asyncio
+async def test_protected_route_with_invalid_token():
+    headers = {"Authorization": "Bearer token_invalido_aqui"}
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/notes/", headers=headers)
+        assert response.status_code == 401
+        assert response.json()["detail"] == "Could not validate credentials"
+        
+@pytest.mark.asyncio
+async def test_protected_route_missing_bearer_prefix():
+    # O token é válido, mas está mal formatado (sem prefixo "Bearer")
+    valid_token = (await get_auth_headers())["Authorization"].replace("Bearer ", "")
+    headers = {"Authorization": valid_token}
+    
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/notes/", headers=headers)
+        assert response.status_code == 401
+        assert "Not authenticated" in response.text or "Could not validate credentials" in response.text
+
+################################### END ACCESS TOKEN TESTS  #################################

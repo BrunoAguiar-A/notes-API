@@ -1,14 +1,55 @@
 from typing import List, Optional
-from schemas.note import CreateNote, UpdatedNote, ResponseNote
+from fastapi import HTTPException
+from sqlalchemy import or_
+from schemas.note import CreateNote, UpdatedNote, ResponseNote, PaginatedNotes
 from models.note import Notes
 from sqlalchemy.orm import Session
 
-def list_notes(db: Session) -> List[ResponseNote]:
-    # Retrieve all notes from the database
-    notes = db.query(Notes).all()
-    return [ResponseNote.model_validate(note) for note in notes]
 
-def create_note(db: Session, note: CreateNote) -> ResponseNote:
+def list_notes_paginated(
+    db: Session,
+    q: Optional[str] = None,
+    limit : int = 10,
+    offset : int = 0,
+    order_by : str = "id",
+    order : str = "asc"
+) -> PaginatedNotes:
+    base_query = db.query(Notes)
+
+    if q: 
+        base_query = base_query.filter(
+            or_(
+                Notes.title.ilike(f"%{q}%"),
+                Notes.content.ilike(f"%{q}%")
+            )
+        )
+    # Validate order_by field
+    if not hasattr(Notes, order_by):
+        order_by = "id"
+    column = getattr(Notes, order_by)
+    if order.lower() == "desc":
+        column = column.desc()
+    else:
+        column = column.asc()
+
+    base_query = base_query.order_by(column)
+    total = base_query.count()
+    result = base_query.offset(offset).limit(limit).all()
+    valid_fields = {"id", "title", "content", "important"}
+    if order_by not in valid_fields:
+        raise HTTPException(status_code=422, detail="Invalid order_by field")
+
+    return PaginatedNotes(
+        total = total,
+        limit = limit,
+        offset = offset,
+        data = result
+    )
+
+def create_note(
+    db: Session, 
+    note: CreateNote
+) -> ResponseNote:
     # Create a new Note instance with the provided data
     new_note = Notes(
         title=note.title,

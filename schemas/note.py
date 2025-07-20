@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, List
 from pydantic import BaseModel, ConfigDict, Field
 
 class CreateNote(BaseModel):
@@ -17,5 +17,10 @@ class ResponseNote(BaseModel):
     title: str
     content: str
     important: bool
-
     model_config = ConfigDict(from_attributes=True)
+    
+class PaginatedNotes(BaseModel):
+    total : int
+    limit : int
+    offset : int
+    data : List[ResponseNote]
