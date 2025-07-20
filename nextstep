@@ -1,6 +1,6 @@
 ✅ Próximos passos sugeridos
 Objetivo	Tarefa -
-Paginação e pesquisa - 	Adicionar parâmetros na listagem de notas -
+Paginação e pesquisa - 	Adicionar parâmetros na listagem de notas - FEITO!
 Compartilhamento -	Endpoint para compartilhar entre usuários -
 Tags e metadados extras  -	Tag e campos como updated_at, archived -
 Rate limiting -	Inserir middleware para limitar requisições -
