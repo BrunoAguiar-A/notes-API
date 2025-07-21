@@ -67,3 +67,12 @@ async def get_auth_headers(create_test_user):
         })
         token = response.json()["access_token"] # Extract the access token from the response
         return {"Authorization": f"Bearer {token}"}
+    
+@pytest.fixture(autouse=True)
+def clean_users():
+    db: Session = next (get_db())
+    db.query(User).delete()
+    db.commit()
+    yield
+    db.query(User).delete()
+    db.commit()

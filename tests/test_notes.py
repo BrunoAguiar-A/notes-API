@@ -2,7 +2,6 @@ import pytest, sys, os
 from httpx import AsyncClient, ASGITransport
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from main import app
-from conftest import get_auth_headers, create_test_user
 
 
 ################################### CREATE TESTS - POST ###################################
@@ -278,3 +277,48 @@ async def test_protected_route_missing_bearer_prefix(get_auth_headers):
         assert "Not authenticated" in response.text or "Could not validate credentials" in response.text
 
 ################################### END ACCESS TOKEN TESTS  #################################
+################################### REGISTER TESTS ##########################################
+
+@pytest.mark.asyncio
+async def test_register_success(async_client,):
+    response = await async_client.post("/register", json={
+        "username": "newuser",
+        "password": "Strongpass123"
+    })
+    assert response.status_code == 201
+    data = response.json()
+    assert "message" in data
+    assert data["username"] == "newuser"
+    assert "user_id" in data
+
+
+@pytest.mark.asyncio
+async def test_register_missing_fields(async_client):
+    response = await async_client.post("/register", json={
+        "password": "1234"
+    })
+    assert response.status_code == 422
+
+@pytest.mark.asyncio
+async def test_register_existing_username(async_client):
+    # Cria usuário inicial
+    await async_client.post("/register", json={
+        "username": "dupuser",
+        "password": "StrongPass123"
+    })
+    # Tenta criar com username repetido
+    response = await async_client.post("/register", json={
+        "username": "dupuser",
+        "password": "StrongPass123"
+    })
+    assert response.status_code in (400, 409)
+
+@pytest.mark.asyncio
+async def test_register_weak_password(async_client):
+    response = await async_client.post("/register", json={
+        "username": "user3",
+        "password": "123" 
+    })
+    assert response.status_code == 422
+
+################################### END REGISTER TESTS ######################################

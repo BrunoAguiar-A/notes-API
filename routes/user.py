@@ -11,7 +11,7 @@ router = APIRouter()
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
-@router.post("/register")
+@router.post("/register", status_code=201)
 def register_user(user: UserCreate, db: Session = Depends(get_db)):
     db_user = db.query(User).filter(User.username == user.username).first()
     if db_user:
@@ -22,4 +22,4 @@ def register_user(user: UserCreate, db: Session = Depends(get_db)):
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
-    return {"message": "Usuário criado com sucesso", "user_id": new_user.id}
+    return {"message": "Usuário criado com sucesso", "user_id": new_user.id, "username": new_user.username}
