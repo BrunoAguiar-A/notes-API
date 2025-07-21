@@ -1,8 +1,8 @@
 ✅ Próximos passos sugeridos
-Objetivo	Tarefa -
-Paginação e pesquisa - 	Adicionar parâmetros na listagem de notas - FEITO!
-Compartilhamento -	Endpoint para compartilhar entre usuários -
-Tags e metadados extras  -	Tag e campos como updated_at, archived -
-Rate limiting -	Inserir middleware para limitar requisições -
-Pipeline + Docker -	Configurar Github Actions + Docker Compose com DB -
-Validação + migrations - Adicionar schemas Pydantic + Alembic para versões de DB -
+Objetivo	            |   Tarefa                                                    |  STATUS |
+Paginação e pesquisa    | 	Adicionar parâmetros na listagem de notas                 |  CHECK  |
+Compartilhamento        | 	Endpoint para compartilhar entre usuários                 |  CHECK  |
+Tags e metadados extras | 	Tag e campos como updated_at, archived                    |         |
+Rate limiting           | 	Inserir middleware para limitar requisições               |         |
+Pipeline + Docker       | 	Configurar Github Actions + Docker Compose com DB         |         |
+Validação + migrations  |   Adicionar schemas Pydantic + Alembic para versões de DB   |         |

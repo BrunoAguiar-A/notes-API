@@ -21,5 +21,9 @@ def login_for_access_token(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    access_token = create_access_token(data={"sub": user.username})
+    access_token = create_access_token(data={"sub": str(user.id)})
     return {"access_token": access_token, "token_type": "bearer"}
+
+@router.get("/test-protected")
+def test_protected_route(current_user = Depends(get_current_user)):
+    return {"message": f"Hello {current_user.username}"}

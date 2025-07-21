@@ -1,11 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-from typing import List, Optional
+from typing import  Optional
 from schemas.note import CreateNote, UpdatedNote, ResponseNote, PaginatedNotes
 from services import note_service
 from database import get_db
-from models.note import Notes
+from models.note import Notes, SharedNote
 from auth.deps import get_current_user
+
 
 VALID_ORDER_FIELDS = {"id", "title", "content", "important"}
 
@@ -26,6 +27,15 @@ def get_note(
     note = note_service.search_note(db, note_id)
     if note is None:
         raise HTTPException(status_code=404, detail="Note not found")
+    
+    if note.owner_id != current_user.id:
+        # Check if it has been shared with this user
+        shared = db.query(SharedNote).filter_by(
+            note_id=note_id, 
+            user_id=current_user.id
+        ).first()
+        if not shared:
+            raise HTTPException(status_code=403, detail="You dont have access to this note")
     return note
 
 # Create a new note
@@ -49,13 +59,29 @@ def create_note(
 @router.put("/{note_id}", response_model=ResponseNote)
 def update_note(
     note_id: int,
-    updated_note: UpdatedNote,
-    db: Session = Depends(get_db), current_user: str = Depends(get_current_user)
+    note_data: UpdatedNote,
+    db: Session = Depends(get_db), 
+    current_user: str = Depends(get_current_user)
 ):
-    updated = note_service.update_note(db, note_id, updated_note)
-    if updated is None:
+    # Search note first
+    note = db.query(Notes).filter(Notes.id == note_id).first()
+
+    if note is None:
         raise HTTPException(status_code=404, detail="Note not found")
-    return updated
+    # If owner, can edit
+    if note.owner_id == current_user.id:
+        return note_service.update_note(db, note, note_data)
+    # Otherwise, check if the note was shared with editing permission.
+    shared = db.query(SharedNote).filter_by(
+        note_id=note_id,
+        user_id=current_user.id,
+        can_edit=True
+    ).first()
+
+    if shared:
+        return note_service.update_note(db, note, note_data)
+
+    raise HTTPException(status_code=403, detail="You dont have permission to edit this note")
 
 # Patch specific fields of a note
 @router.patch("/{note_id}", response_model=ResponseNote)

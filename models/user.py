@@ -10,3 +10,4 @@ class User(Base):
     hashed_password = Column(String)
 
     notes = relationship("Notes", back_populates="owner")
+    shared_notes = relationship("SharedNote", back_populates="user")

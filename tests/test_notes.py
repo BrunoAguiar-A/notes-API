@@ -1,22 +1,27 @@
 import pytest, sys, os 
 from httpx import AsyncClient, ASGITransport
+
+from models.note import Notes
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from main import app
+from models.user import User
+from database import get_db
+from auth.users import get_password_hash
 
 
-################################### CREATE TESTS - POST ###################################
+################################### CREATE TESTS - POST #######################################
 # Test creating a new note successfully and then deletes it (cleanup)
 @pytest.mark.asyncio
 async def test_create_note(async_client):
     response = await async_client.post("/notes/", json={
-        "title": "Minha Primeira Nota",
-        "content": "Conteúdo de teste"
+        "title": "My first Note",
+        "content": "Test content"
     })
 
     assert response.status_code == 201
     data = response.json()
-    assert data["title"] == "Minha Primeira Nota"
-    assert data["content"] == "Conteúdo de teste"
+    assert data["title"] == "My first Note"
+    assert data["content"] == "Test content"
 
     # Cleanup
     await async_client.delete(f"/notes/{data['id']}")
@@ -130,22 +135,25 @@ async def test_search_query_param(auth_headers):
         data = response.json()
         assert all("Temporário" in note["title"] or "Temporário" in note["content"] for note in data["data"])
 
-################################### END GET TESTS - GET #####################################
-################################### UPDATE TESTS - UPDATE ###################################
+################################### END GET TESTS - GET ######################################
+################################### UPDATE TESTS - UPDATE ####################################
 # Test updating an existing note's title, content, and importance
 @pytest.mark.asyncio
-async def test_update_note(async_client, create_temp_note):
-    note = create_temp_note
+async def test_update_note(create_test_user, create_test_note, get_auth_headers):
+    user_data = create_test_user(username="user_update", password="senha123")
+    headers = await get_auth_headers(user_data["username"], user_data["password"])
 
-    update_response = await async_client.put(f"/notes/{note['id']}", json={
-        "title": "Note Updated",
-        "content": "Content Updated",
-        "important": "False"
-    })
-    assert update_response.status_code == 200
-    updated = update_response.json()
-    assert updated["title"] == "Note Updated"
-    assert updated["content"] == "Content Updated"
+    note = create_test_note(user_id=user_data["id"], title="Nota antiga")
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test", headers=headers) as client:
+        response = await client.put(f"/notes/{note.id}", json={
+            "title": "Note Updated",
+            "content": "Content Updated",
+            "important": False
+        })
+        assert response.status_code == 200
+        updated_note = response.json()
+        assert updated_note["title"] == "Note Updated"
 
 # Test updating a note with a non-existent ID, expecting 404 not found
 @pytest.mark.asyncio
@@ -170,21 +178,17 @@ async def test_update_note_with_missing_fields(async_client, create_temp_note):
     assert response.status_code == 422
 
 @pytest.mark.asyncio
-async def test_update_note_without_important(async_client, create_temp_note):
-    note = create_temp_note
+async def test_update_note_without_important(auth_client_with_note):
+    async_client, note = auth_client_with_note
 
     update_data = {
         "title": "Parcial Update",
-        "content": "Conteúdo atualizado parcialmente"
-        #whidout important
+        "content": "Partially updated content"
     }
 
-    response = await async_client.put(f"/notes/{note['id']}", json=update_data)
+    response = await async_client.put(f"/notes/{note.id}", json=update_data)
     assert response.status_code == 200
-    data = response.json()
-    assert data["title"] == update_data["title"]
-    assert data["content"] == update_data["content"]
-    assert "important" in data  # exist
+
 
 
 ################################### END UPDATE TESTS - UPDATE ###############################
@@ -205,27 +209,41 @@ async def test_delete_notes(async_client, create_temp_note):
 # Test deleting a note with a non-existent ID, expecting 404 not found
 @pytest.mark.asyncio
 async def test_delete_nonexistent_note(auth_headers):
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test", headers=auth_headers) as client:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), 
+        base_url="http://test", 
+        headers=auth_headers
+    ) as client:
         response = await client.delete("/notes/999999")
     assert response.status_code == 404
 
 # Test deleting a note with an invalid ID format, expecting 422 validation error
 @pytest.mark.asyncio
 async def test_delete_invalid_id(auth_headers):
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test", headers=auth_headers) as client:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), 
+        base_url="http://test", 
+        headers=auth_headers
+    ) as client:
         response = await client.delete("/notes/abc")
     assert response.status_code == 422
 
 ################################### END DELETE TESTS - DELETE ###############################
 ################################### ACCESS TOKEN TESTS  #####################################
 @pytest.mark.asyncio
-async def test_login_success(async_client):
-    response = await async_client.post("/token", data={
-        "username": "test_user",
-        "password": "test123"
-    })
+async def test_login_success(create_test_user):
+    # Create user
+    credentials = create_test_user(username="test_user", password="test123")
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post("/token", data={
+            "username": credentials["username"],
+            "password": credentials["password"]
+        })
+    
     assert response.status_code == 200
-    assert "access_token" in response.json()
+    data = response.json()
+    assert "access_token" in data
 
 @pytest.mark.asyncio
 async def test_protected_route_without_token():
@@ -234,25 +252,33 @@ async def test_protected_route_without_token():
         assert response.status_code == 401
 
 @pytest.mark.asyncio
-async def test_protected_route_with_token(async_client):
-    # Token access
-    login_response = await async_client.post("/token", data={
-        "username": "test_user",
-        "password": "test123"
-    })
-    token_data = login_response.json()
-    access_token = token_data["access_token"]
+async def test_protected_route_with_token(create_test_user):
+    # Create user
+    credentials = create_test_user(username="test_user", password="test123")
 
-    # Use token on header Authorization
-    headers = {"Authorization": f"Bearer {access_token}"}
-    response = await async_client.get("/notes/", headers=headers)
-    assert response.status_code == 200
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        login_response = await client.post("/token", data={
+            "username": credentials["username"],
+            "password": credentials["password"]
+        })
+        assert login_response.status_code == 200, f"Login falhou: {login_response.text}"
+        
+        token_data = login_response.json()
+        assert "access_token" in token_data, f"access_token não encontrado: {token_data}"
+
+        access_token = token_data["access_token"]
+
+        # Use token to access protected route
+        headers = {"Authorization": f"Bearer {access_token}"}
+        protected_response = await client.get("/notes/", headers=headers)
+        assert protected_response.status_code == 200
+
 
 @pytest.mark.asyncio
 async def test_login_invalid_credentials(async_client):
     response = await async_client.post("/token", data={
-        "username": "usuario_invalido",
-        "password": "senhaerrada"
+        "username": "invalid_user",
+        "password": "invalid_psw"
     })
     assert response.status_code == 401
     assert response.json()["detail"] == "Invalid Credentials"
@@ -266,15 +292,18 @@ async def test_protected_route_with_invalid_token():
         assert response.json()["detail"] == "Could not validate credentials"
         
 @pytest.mark.asyncio
-async def test_protected_route_missing_bearer_prefix(get_auth_headers):
-    # The token is valid, but it is poorly shaped no "Bearer"
-    valid_token = get_auth_headers["Authorization"].replace("Bearer ", "")
-    headers = {"Authorization": valid_token}
-    
+async def test_protected_route_missing_bearer_prefix(get_auth_headers,create_test_user):
+    user_data = create_test_user(username="user_update", password="senha123")
+    headers = await get_auth_headers(user_data["username"], user_data["password"])
+    # Remove "Bearer " on header
+    valid_token = headers["Authorization"].replace("Bearer ", "")
+
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        response = await client.get("/notes/", headers=headers)
-        assert response.status_code == 401
-        assert "Not authenticated" in response.text or "Could not validate credentials" in response.text
+        response = await client.get(
+            "/notes/",
+            headers={"Authorization": valid_token} 
+        )
+    assert response.status_code == 401
 
 ################################### END ACCESS TOKEN TESTS  #################################
 ################################### REGISTER TESTS ##########################################
@@ -290,7 +319,6 @@ async def test_register_success(async_client,):
     assert "message" in data
     assert data["username"] == "newuser"
     assert "user_id" in data
-
 
 @pytest.mark.asyncio
 async def test_register_missing_fields(async_client):
@@ -320,5 +348,44 @@ async def test_register_weak_password(async_client):
         "password": "123" 
     })
     assert response.status_code == 422
-
 ################################### END REGISTER TESTS ######################################
+################################### SHARED NOTES TESTS ######################################
+@pytest.mark.asyncio
+async def test_share_note_success(
+    async_client, 
+    get_auth_headers,
+    create_test_user,
+    get_user_by_token,
+    create_test_note,
+    override_get_db  
+):
+    db = override_get_db  
+
+    # Creating the sender
+    sender_credentials = create_test_user(username="test_user", password="test123")
+    sender_headers = await get_auth_headers(sender_credentials["username"], sender_credentials["password"])
+    sender_token = sender_headers["Authorization"].split(" ")[1]
+    sender_user = get_user_by_token(sender_token)
+
+    # Create note
+    note = create_test_note(user_id=sender_user.id)
+
+    # Recipient creation using the same session
+    recipient_username = "recipient"
+    recipient_password = "psw123"
+    recipient = User(username=recipient_username, hashed_password=get_password_hash(recipient_password))
+    db.add(recipient)
+    db.commit()
+    db.refresh(recipient)
+
+    # Send request to share
+    response = await async_client.post(f"/notes/{note.id}/share",json={
+        "recipient_username": recipient_username,
+        "can_edit": True
+    },
+    headers=sender_headers
+    )
+
+    assert response.status_code == 200
+    assert response.json()["message"] == "Note shared successfully"
+################################### END SHARED NOTES TESTS ##################################

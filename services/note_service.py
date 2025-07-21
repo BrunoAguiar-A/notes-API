@@ -1,8 +1,9 @@
-from typing import List, Optional
+from typing import Optional
 from fastapi import HTTPException
 from sqlalchemy import or_
 from schemas.note import CreateNote, UpdatedNote, ResponseNote, PaginatedNotes
-from models.note import Notes
+from models.note import Notes, SharedNote
+from models.user import User
 from sqlalchemy.orm import Session
 
 
@@ -73,12 +74,7 @@ def search_note(db: Session, note_id: int) -> Optional[ResponseNote]:
         return ResponseNote.model_validate(note)
     return None
 
-def update_note(db: Session, note_id: int, updated: UpdatedNote) -> Optional[ResponseNote]:
-    # Update a note fully with new data
-    note = db.query(Notes).filter(Notes.id == note_id).first()
-    if not note:
-        return None
-
+def update_note(db: Session, note: Notes, updated: UpdatedNote) -> Optional[ResponseNote]:
     if updated.title is not None:
         note.title = updated.title
     if updated.content is not None:
@@ -91,7 +87,7 @@ def update_note(db: Session, note_id: int, updated: UpdatedNote) -> Optional[Res
     return ResponseNote.model_validate(note)
 
 def patch_note(db: Session, note_id: int, update: UpdatedNote) -> Optional[ResponseNote]:
-    # Update only fields that are provided (partial update)
+    # Update only fields that are provided 
     note = db.query(Notes).filter(Notes.id == note_id).first()
     if not note:
         return None
@@ -114,5 +110,26 @@ def delete_note(db: Session, note_id: int) -> bool:
         return False
 
     db.delete(note)
+    db.commit()
+    return True
+
+def share_note(db: Session, note_id: int, target_user_id: int, can_edit: bool) -> bool:
+    # Check if note exists
+    note = db.query(Notes).filter(Notes.id == note_id).first()
+    if not note:
+        return False
+
+    # Check if target user exists
+    user = db.query(User).filter(User.id == target_user_id).first()
+    if not user:
+        return False
+
+    # Create shared note entry
+    shared = SharedNote(
+        note_id=note_id,
+        user_id=target_user_id,
+        can_edit=can_edit
+    )
+    db.add(shared)
     db.commit()
     return True

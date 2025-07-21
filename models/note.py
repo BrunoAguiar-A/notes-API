@@ -21,6 +21,7 @@ class SharedNote(Base):
     note_id = Column(Integer, ForeignKey("notes.id"))
     user_id = Column(Integer, ForeignKey("users.id"))
     permission = Column(String, default="read")
+    can_edit = Column(Boolean, default=False)
 
     note = relationship("Notes", back_populates="shared_with")
-    user = relationship("User")
+    user = relationship("User", back_populates="shared_notes")
