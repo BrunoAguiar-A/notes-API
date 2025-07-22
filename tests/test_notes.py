@@ -12,11 +12,11 @@ from auth.users import get_password_hash
 ################################### CREATE TESTS - POST #######################################
 # Test creating a new note successfully and then deletes it (cleanup)
 @pytest.mark.asyncio
-async def test_create_note(async_client):
+async def test_create_note(async_client, auth_headers):
     response = await async_client.post("/notes/", json={
         "title": "My first Note",
         "content": "Test content"
-    })
+    }, headers=auth_headers)
 
     assert response.status_code == 201
     data = response.json()
@@ -84,12 +84,12 @@ async def test_list_notes(auth_headers):
 
 # Test retrieving a single note by its ID
 @pytest.mark.asyncio
-async def test_get_note_by_id(async_client, create_temp_note):
+async def test_get_note_by_id(async_client, create_temp_note, auth_headers):
     note = create_temp_note
-    #search for created note
-    response = await async_client.get(f"/notes/{note['id']}")
+    response = await async_client.get(f"/notes/{note['id']}", headers=auth_headers)
     assert response.status_code == 200
-    assert response.json()['id'] == note['id']
+    data = response.json()
+    assert data["id"] == note["id"]
 
 @pytest.mark.asyncio
 async def test_list_notes_paginated_and_ordered(auth_headers):

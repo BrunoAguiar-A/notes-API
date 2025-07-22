@@ -5,18 +5,30 @@ from schemas.note import CreateNote, UpdatedNote, ResponseNote, PaginatedNotes
 from models.note import Notes, SharedNote
 from models.user import User
 from sqlalchemy.orm import Session
-
+from models.tag import Tag
 
 def list_notes_paginated(
     db: Session,
     q: Optional[str] = None,
-    limit : int = 10,
-    offset : int = 0,
-    order_by : str = "id",
-    order : str = "asc"
+    tag: Optional[str] = None,
+    favorite: Optional[bool] = None,
+    pinned: Optional[bool] = None,
+    show_archived: bool = False,
+    limit: int = 10,
+    offset: int = 0,
+    order_by: str = "id",
+    order: str = "asc"
 ) -> PaginatedNotes:
     base_query = db.query(Notes)
 
+    if not show_archived:
+        base_query = base_query.filter(Notes.archived == False)
+    column = getattr(Notes, order_by)
+    base_query = base_query.order_by(
+        Notes.pinned.desc(), 
+        column.desc() if order == "desc" else column.asc())
+    if tag:
+        base_query = base_query.join(Notes.tags).filter(Tag.name == tag)
     if q: 
         base_query = base_query.filter(
             or_(
@@ -24,6 +36,11 @@ def list_notes_paginated(
                 Notes.content.ilike(f"%{q}%")
             )
         )
+    if favorite is not None:
+        base_query = base_query.filter(Notes.favorite == favorite)
+
+    if pinned is not None:
+        base_query = base_query.filter(Notes.pinned == pinned)
     # Validate order_by field
     if not hasattr(Notes, order_by):
         order_by = "id"
@@ -49,14 +66,31 @@ def list_notes_paginated(
 
 def create_note(
     db: Session, 
-    note: CreateNote
+    note: CreateNote,
+    owner_id: int
 ) -> ResponseNote:
     # Create a new Note instance with the provided data
     new_note = Notes(
         title=note.title,
         content=note.content,
-        important=note.important
+        important=note.important,
+        archived=note.archived,
+        owner_id=owner_id,
+        pinned=note.pinned,
+        favorite=note.favorite
     )
+    # Create Tags
+    tag_objects = []
+    for tag_name in note.tags:
+        tag = db.query(Tag).filter_by(name=tag_name).first()
+        if not tag:
+            tag = Tag(name=tag_name)
+            db.add(tag)
+            db.commit()
+            db.refresh(tag)
+        tag_objects.append(tag)
+    
+    new_note.tags = tag_objects
 
     # Add the new note to the session and commit it to the database
     db.add(new_note)
@@ -81,23 +115,60 @@ def update_note(db: Session, note: Notes, updated: UpdatedNote) -> Optional[Resp
         note.content = updated.content
     if updated.important is not None:
         note.important = updated.important
+    if updated.archived is not None:
+        note.archived = updated.archived
+    if updated.pinned is not None:
+        note.pinned = updated.pinned
+    if updated.favorite is not None:
+        note.favorite = updated.favorite
+        
+    # Update Tags, if have
+    if updated.tags is not None:
+        updated_tags = []
+        for tag_name in updated.tags:
+            tag = db.query(Tag).filter_by(name=tag_name).first()
+            if not tag:
+                tag = Tag(name=tag_name)
+                db.add(tag)
+                db.commit()
+                db.refresh(tag)
+            updated_tags.append(tag)
+        note.tags = updated_tags
 
     db.commit()
     db.refresh(note)
     return ResponseNote.model_validate(note)
 
-def patch_note(db: Session, note_id: int, update: UpdatedNote) -> Optional[ResponseNote]:
+def patch_note(db: Session, note_id: int, updated: UpdatedNote) -> Optional[ResponseNote]:
     # Update only fields that are provided 
     note = db.query(Notes).filter(Notes.id == note_id).first()
     if not note:
         return None
 
-    if update.title is not None:
-        note.title = update.title
-    if update.content is not None:
-        note.content = update.content
-    if update.important is not None:
-        note.important = update.important
+    if updated.title is not None:
+        note.title = updated.title
+    if updated.content is not None:
+        note.content = updated.content
+    if updated.important is not None:
+        note.important = updated.important
+    if updated.pinned is not None:
+        note.pinned = updated.pinned
+    if updated.archived is not None:
+        note.archived = updated.archived
+    if updated.favorite is not None:
+        note.favorite = updated.favorite
+
+    if updated.tags is not None:
+        new_tags = []
+        for tag_name in updated.tags:
+            tag = db.query(Tag).filter_by(name=tag_name).first()
+            if not tag:
+                tag = Tag(name=tag_name)
+                db.add(tag)
+                db.commit()
+                db.refresh(tag)
+            new_tags.append(tag)
+        note.tags = new_tags
 
     db.commit()
     db.refresh(note)
